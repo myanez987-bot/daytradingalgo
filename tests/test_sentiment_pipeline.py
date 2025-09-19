@@ -173,3 +173,34 @@ def test_prepare_sentiment_features_filters_future_articles() -> None:
     day_list = list(features.keys())
     assert features[day_list[1]].sent_count == 1
     assert features[day_list[2]].sent_count == 0
+
+
+def test_recency_weighting_respects_market_close() -> None:
+    scorer = DummyScorer()
+    trading_days = [datetime(2021, 1, 4) + timedelta(days=idx) for idx in range(2)]
+    articles = [
+        NewsArticle("TEST", datetime(2021, 1, 3, 18, 0), headline="bad"),
+        NewsArticle("TEST", datetime(2021, 1, 4, 9, 0), headline="good"),
+    ]
+
+    features = build_daily_sentiment_features(
+        articles,
+        trading_days,
+        market_close=time(16, 0),
+        lag_bars=0,
+        scorer=scorer,
+        decay_half_life=1.0,
+    )
+
+    session = trading_days[0].date()
+    row = features[session]
+    assert row.sent_weighted is not None
+
+    session_anchor = datetime.combine(session, time(16, 0))
+    age_bad = (session_anchor - datetime(2021, 1, 3, 18, 0)).total_seconds() / 86400.0
+    age_good = (session_anchor - datetime(2021, 1, 4, 9, 0)).total_seconds() / 86400.0
+    weight_bad = math.exp(-math.log(2.0) * age_bad)
+    weight_good = math.exp(-math.log(2.0) * age_good)
+    expected = (weight_bad * (-0.5) + weight_good * 0.8) / (weight_bad + weight_good)
+
+    assert math.isclose(row.sent_weighted, expected, rel_tol=1e-9)

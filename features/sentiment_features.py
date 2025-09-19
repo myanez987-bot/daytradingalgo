@@ -229,12 +229,15 @@ def build_daily_sentiment_features(
             continue
         scores = [score for score, _ in entries]
         mean_score = sum(scores) / len(scores)
-        session_dt = datetime.combine(session, time(0, 0))
+        session_dt = datetime.combine(session, market_close)
         half_life = max(decay_half_life, 1e-9)
         weights = []
         weighted_scores = []
         for score, published_dt in entries:
-            age_days = (session_dt - published_dt).total_seconds() / 86400.0
+            age_seconds = (session_dt - published_dt).total_seconds()
+            if age_seconds < 0:
+                age_seconds = 0.0
+            age_days = age_seconds / 86400.0
             weight = math.exp(-math.log(2.0) * age_days / half_life)
             weights.append(weight)
             weighted_scores.append(score * weight)
